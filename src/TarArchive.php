@@ -6,10 +6,10 @@ declare(strict_types=1);
  * @link http://php-classes.sourceforge.net/ PHP Class Collection
  * @author Dennis Wronka <reptiler@users.sourceforge.net>
  */
-namespace unrealization\PHPClassCollection;
+namespace unrealization;
 
-use unrealization\PHPClassCollection\TarArchive\ArchiveEntry;
-use unrealization\PHPClassCollection\TarArchive\Owner;
+use unrealization\TarArchive\ArchiveEntry;
+use unrealization\TarArchive\Owner;
 /**
  * @package PHPClassCollection
  * @subpackage TarArchive

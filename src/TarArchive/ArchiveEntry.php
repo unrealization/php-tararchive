@@ -6,9 +6,9 @@ declare(strict_types=1);
  * @link http://php-classes.sourceforge.net/ PHP Class Collection
  * @author Dennis Wronka <reptiler@users.sourceforge.net>
  */
-namespace unrealization\PHPClassCollection\TarArchive;
+namespace unrealization\TarArchive;
 
-use unrealization\PHPClassCollection\MbRegEx;
+use unrealization\MbRegEx;
 /**
  * @package PHPClassCollection
  * @subpackage TarArchive

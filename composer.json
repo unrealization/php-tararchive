@@ -1,10 +1,10 @@
 {
 	"autoload" : {
 		"psr-4" : {
-			"unrealization\\PHPClassCollection\\" : "src"
+			"unrealization\\" : "src"
 		},
 		"psr-0" : {
-			"unrealization\\PHPClassCollection\\" : "src"
+			"unrealization\\" : "src"
 		}
 	},
 	"name" : "unrealization/php-tararchive",
@@ -13,6 +13,6 @@
 	"require" : {
 		"php" : ">=7.1",
 		"ext-posix": "*",
-		"unrealization/php-mbregex": "^1.0"
+		"unrealization/php-mbregex": "^2.0"
 	}
 }
