@@ -55,18 +55,18 @@ class ArchiveEntry
 	 */
 	public const TYPE_FIFO		= 6;
 
-	private $header			= null;
-	private $name			= null;
-	private $type			= null;
-	private $permissions	= null;
-	private $modified		= null;
-	private $size			= 0;
-	private $offset			= null;
-	private $owner			= null;
-	private $linkName		= '';
-	private $devMajor		= 0;
-	private $devMinor		= 0;
-	private $prefix			= '';
+	private ?string $header			= null;
+	private ?string $name			= null;
+	private ?int $type				= null;
+	private ?int $permissions		= null;
+	private ?\DateTime $modified	= null;
+	private int $size				= 0;
+	private ?int $offset			= null;
+	private ?Owner $owner			= null;
+	private string $linkName		= '';
+	private int $devMajor			= 0;
+	private int $devMinor			= 0;
+	private string $prefix			= '';
 
 	public static function fromHeader(string $header): self
 	{
@@ -95,19 +95,104 @@ class ArchiveEntry
 		return $archiveEntry;
 	}
 
+	public static function fromFile(string $fileName): self
+	{
+		if (!file_exists($fileName))
+		{
+			throw new \Exception('File does not exist');
+		}
+
+		$fileType = filetype($fileName);
+		$typeFlag = null;
+
+		switch ($fileType)
+		{
+			case 'block':
+				$typeFlag = self::TYPE_BLOCKDEV;
+				break;
+			case 'char':
+				$typeFlag = self::TYPE_CHARDEV;
+				break;
+			case 'dir':
+				$typeFlag = self::TYPE_DIRECTORY;
+				break;
+			case 'fifo':
+				$typeFlag = self::TYPE_FIFO;
+				break;
+			case 'file':
+				$typeFlag = self::TYPE_FILE;
+				break;
+			case 'link':
+				$typeFlag = self::TYPE_SYMLINK;
+				break;
+			case 'unknown':
+			default:
+				throw new \Exception('Unknown file type '.$fileType);
+				break;
+		}
+
+		if (($typeFlag === self::TYPE_DIRECTORY) || ($typeFlag === self::TYPE_FILE) || ($typeFlag === self::TYPE_LINK) || ($typeFlag === self::TYPE_SYMLINK))
+		{
+			if (!is_readable($fileName))
+			{
+				throw new \Exception('Cannot read the file');
+			}
+		}
+
+		$archiveEntry = new self();
+		$archiveEntry->setName($fileName);
+		$archiveEntry->setType($typeFlag);
+		$archiveEntry->setPermissions((int)decoct(fileperms($fileName)));
+
+		try
+		{
+			$archiveEntry->setModificationDate(new \DateTime(date('Y-m-d H:i:s', filectime($fileName))));
+		}
+		catch (\Exception $e)
+		{
+			$archiveEntry->setModificationDate(new \DateTime());
+		}
+
+		$userId = fileowner($fileName);
+		$userInfo = posix_getpwuid($userId);
+		$groupId = filegroup($fileName);
+		$groupInfo = posix_getgrgid($groupId);
+		$owner = new Owner($userId, $userInfo['name'], $groupId, $groupInfo['name']);
+		$archiveEntry->setOwner($owner);
+
+		if ($typeFlag === ArchiveEntry::TYPE_FILE)
+		{
+			$archiveEntry->setSize(filesize($fileName));
+		}
+
+		if ($typeFlag == ArchiveEntry::TYPE_SYMLINK)
+		{
+			$archiveEntry->setLinkName(readlink($fileName));
+		}
+
+		if (($typeFlag == ArchiveEntry::TYPE_BLOCKDEV) || ($typeFlag == ArchiveEntry::TYPE_CHARDEV))
+		{
+			$fileStat = stat($fileName);
+			$archiveEntry->setDevMajor(($fileStat['rdev'] >> 8) & 0xFF);
+			$archiveEntry->setDevMinor($fileStat['rdev'] & 0xFF);
+		}
+
+		return $archiveEntry;
+	}
+
 	public function updateHeader(): void
 	{
 		$name = MbRegEx::padString(MbRegEx::replace('^\.?\/?(.+)$', '\1', $this->getName()), 100, chr(0), STR_PAD_RIGHT);
-		$permissions = MbRegEx::padString(((string)decoct($this->getPermissions())).chr(0), 8, '0', STR_PAD_LEFT);
-		$modified = MbRegEx::padString(((string)decoct($this->getModificationDate()->format('U'))).chr(0), 12, '0', STR_PAD_LEFT);
-		$size = MbRegEx::padString(((string)decoct($this->getSize())).chr(0), 12, '0', STR_PAD_LEFT);
-		$userId = MbRegEx::padString(((string)decoct($this->getOwner()->getUserId())).chr(0), 8, '0', STR_PAD_LEFT);
+		$permissions = MbRegEx::padString($this->getPermissions().chr(0), 8, '0', STR_PAD_LEFT);
+		$modified = MbRegEx::padString(decoct((int)$this->getModificationDate()->format('U')).chr(0), 12, '0', STR_PAD_LEFT);
+		$size = MbRegEx::padString(decoct($this->getSize()).chr(0), 12, '0', STR_PAD_LEFT);
+		$userId = MbRegEx::padString(decoct($this->getOwner()->getUserId()).chr(0), 8, '0', STR_PAD_LEFT);
 		$userName = MbRegEx::padString($this->getOwner()->getUserName(), 32, chr(0), STR_PAD_RIGHT);
-		$groupId = MbRegEx::padString(((string)decoct($this->getOwner()->getGroupId())).chr(0), 8, '0', STR_PAD_LEFT);
+		$groupId = MbRegEx::padString(decoct($this->getOwner()->getGroupId()).chr(0), 8, '0', STR_PAD_LEFT);
 		$groupName = MbRegEx::padString($this->getOwner()->getGroupName(), 32, chr(0), STR_PAD_RIGHT);
 		$linkName = MbRegEx::padString($this->getLinkName(), 100, chr(0), STR_PAD_RIGHT);
-		$devMajor = MbRegEx::padString((string)decoct($this->getDevMajor()), 8, chr(0), STR_PAD_RIGHT);
-		$devMinor = MbRegEx::padString((string)decoct($this->getDevMinor()), 8, chr(0), STR_PAD_RIGHT);
+		$devMajor = MbRegEx::padString(decoct($this->getDevMajor()), 8, chr(0), STR_PAD_RIGHT);
+		$devMinor = MbRegEx::padString(decoct($this->getDevMinor()), 8, chr(0), STR_PAD_RIGHT);
 		$prefix = MbRegEx::padString($this->getPrefix(), 155, chr(0), STR_PAD_RIGHT);
 		$ustar = 'ustar  '.chr(0);
 		$checkSum = str_repeat(' ', 8);
@@ -119,7 +204,7 @@ class ArchiveEntry
 			$checkSum += ord(mb_substr($header, $pos, 1));
 		}
 
-		$checkSum = MbRegEx::padString(((string)decoct($checkSum)).chr(0).' ', 8, '0', STR_PAD_LEFT);
+		$checkSum = MbRegEx::padString(decoct($checkSum).chr(0).' ', 8, '0', STR_PAD_LEFT);
 		$header = MbRegEx::padString($name.$permissions.$userId.$groupId.$size.$modified.$checkSum.$this->getType().$linkName.$ustar.$userName.$groupName.$devMajor.$devMinor.$prefix, 512, chr(0), STR_PAD_RIGHT);
 		$this->header = $header;
 	}

@@ -17,10 +17,10 @@ namespace unrealization\TarArchive;
  */
 class Owner
 {
-	private $userId		= null;
-	private $userName	= null;
-	private $groupId	= null;
-	private $groupName	= null;
+	private int $userId;
+	private string $userName;
+	private int $groupId;
+	private string $groupName;
 
 	public function __construct(int $userId, string $userName, int $groupId, string $groupName)
 	{

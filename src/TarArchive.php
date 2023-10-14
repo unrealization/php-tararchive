@@ -9,7 +9,6 @@ declare(strict_types=1);
 namespace unrealization;
 
 use unrealization\TarArchive\ArchiveEntry;
-use unrealization\TarArchive\Owner;
 /**
  * @package PHPClassCollection
  * @subpackage TarArchive
@@ -24,12 +23,12 @@ class TarArchive
 	 * The filename of the archive
 	 * @var string
 	 */
-	private $fileName = null;
+	private ?string $fileName = null;
 	/**
 	 * The list of files in the archive
 	 * @var ArchiveEntry[]
 	 */
-	private $fileList = array();
+	private array $fileList = array();
 
 	/**
 	 * Constructor
@@ -118,10 +117,12 @@ class TarArchive
 	/**
 	 * Extract a file from the archive
 	 * @param int $index
+	 * @param bool $setPermissions
+	 * @param bool $setOwner
 	 * @return void
 	 * @throws \Exception
 	 */
-	public function extract(int $index): void
+	public function extract(int $index, bool $setPermissions = true, bool $setOwner = false): void
 	{
 		$data = $this->extractData($index);
 		$fileInfo = $this->fileList[$index];
@@ -169,18 +170,19 @@ class TarArchive
 					$created = symlink($fileInfo->getLinkName(), $fileInfo->getName());
 					break;
 				case ArchiveEntry::TYPE_CHARDEV:
-					$fileMode = POSIX_S_IFCHR | (int)$fileInfo->getPermissions();
+					$fileMode = POSIX_S_IFCHR | $fileInfo->getPermissions();
 					$created = posix_mknod($fileInfo->getName(), $fileMode, $fileInfo->getDevMajor(), $fileInfo->getDevMinor());
 					break;
 				case ArchiveEntry::TYPE_BLOCKDEV:
-					$fileMode = POSIX_S_IFBLK | (int)$fileInfo->getPermissions();
+					$fileMode = POSIX_S_IFBLK | $fileInfo->getPermissions();
 					$created = posix_mknod($fileInfo->getName(), $fileMode, $fileInfo->getDevMajor(), $fileInfo->getDevMinor());
+					//$created = posix_mknod($fileInfo->getName(), POSIX_S_IFBLK, $fileInfo->getDevMajor(), $fileInfo->getDevMinor());
 					break;
 				case ArchiveEntry::TYPE_DIRECTORY:
-					$created = mkdir($fileInfo->getName(), (int)$fileInfo->getPermissions());
+					$created = mkdir($fileInfo->getName(), $fileInfo->getPermissions());
 					break;
 				case ArchiveEntry::TYPE_FIFO:
-					$created = posix_mkfifo($fileInfo->getName(), (int)$fileInfo->getPermissions());
+					$created = posix_mkfifo($fileInfo->getName(), $fileInfo->getPermissions());
 					break;
 				default:
 					throw new \Exception('Unknown type flag '.$fileInfo->getType());
@@ -191,6 +193,26 @@ class TarArchive
 			{
 				throw new \Exception('Cannot create file');
 			}
+		}
+
+		switch ($fileInfo->getType())
+		{
+			case ArchiveEntry::TYPE_FILE:
+			case ArchiveEntry::TYPE_LINK:
+			case ArchiveEntry::TYPE_SYMLINK:
+				if ($setPermissions === true)
+				{
+					chmod($fileInfo->getName(), $fileInfo->getPermissions());
+				}
+			case ArchiveEntry::TYPE_DIRECTORY:
+				if ($setOwner === true)
+				{
+					chown($fileInfo->getName(), $fileInfo->getOwner()->getUserId());
+					chgrp($fileInfo->getName(), $fileInfo->getOwner()->getGroupId());
+				}
+				break;
+			default:
+				break;
 		}
 	}
 
@@ -373,92 +395,7 @@ class TarArchive
 	 */
 	public function add(string $fileName): void
 	{
-		if (!file_exists($fileName))
-		{
-			throw new \Exception('File does not exist');
-		}
-
-		/*if (!is_readable($fileName))
-		{
-			throw new \Exception('Cannot read the file');
-		}*/
-
-		$fileType = filetype($fileName);
-		$typeFlag = null;
-
-		switch ($fileType)
-		{
-			case 'block':
-				$typeFlag = ArchiveEntry::TYPE_BLOCKDEV;
-				break;
-			case 'char':
-				$typeFlag = ArchiveEntry::TYPE_CHARDEV;
-				break;
-			case 'dir':
-				$typeFlag = ArchiveEntry::TYPE_DIRECTORY;
-				break;
-			case 'fifo':
-				$typeFlag = ArchiveEntry::TYPE_FIFO;
-				break;
-			case 'file':
-				$typeFlag = ArchiveEntry::TYPE_FILE;
-				break;
-			case 'link':
-				$typeFlag = ArchiveEntry::TYPE_SYMLINK;
-				break;
-			case 'unknown':
-			default:
-				throw new \Exception('Unknown file type '.$fileType);
-				break;
-		}
-
-		if (($typeFlag === ArchiveEntry::TYPE_DIRECTORY) || ($typeFlag === ArchiveEntry::TYPE_FILE) || ($typeFlag === ArchiveEntry::TYPE_LINK) || ($typeFlag === ArchiveEntry::TYPE_SYMLINK))
-		{
-			if (!is_readable($fileName))
-			{
-				throw new \Exception('Cannot read the file');
-			}
-		}
-
-		$archiveEntry = new ArchiveEntry();
-		$archiveEntry->setName($fileName);
-		$archiveEntry->setType($typeFlag);
-		$archiveEntry->setPermissions((int)decoct(fileperms($fileName)));
-
-		try
-		{
-			$archiveEntry->setModificationDate(new \DateTime(date('Y-m-d H:i:s', filectime($fileName))));
-		}
-		catch (\Exception $e)
-		{
-			$archiveEntry->setModificationDate(new \DateTime());
-		}
-
-		$userId = fileowner($fileName);
-		$userInfo = posix_getpwuid($userId);
-		$groupId = filegroup($fileName);
-		$groupInfo = posix_getgrgid($groupId);
-		$owner = new Owner($userId, $userInfo['name'], $groupId, $groupInfo['name']);
-		$archiveEntry->setOwner($owner);
-
-		if ($typeFlag === ArchiveEntry::TYPE_FILE)
-		{
-			$archiveEntry->setSize(filesize($fileName));
-		}
-
-		if ($typeFlag == ArchiveEntry::TYPE_SYMLINK)
-		{
-			$archiveEntry->setLinkName(readlink($fileName));
-		}
-
-		if (($typeFlag == ArchiveEntry::TYPE_BLOCKDEV) || ($typeFlag == ArchiveEntry::TYPE_CHARDEV))
-		{
-			$fileStat = stat($fileName);
-			$archiveEntry->setDevMajor(($fileStat['rdev'] >> 8) & 0xFF);
-			$archiveEntry->setDevMinor($fileStat['rdev'] & 0xFF);
-		}
-
-		$this->fileList[] = $archiveEntry;
+		$this->fileList[] = ArchiveEntry::fromFile($fileName);
 	}
 
 	/**
