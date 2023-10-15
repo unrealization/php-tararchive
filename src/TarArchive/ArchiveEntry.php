@@ -74,7 +74,7 @@ class ArchiveEntry
 		$archiveEntry->setHeader($header);
 		$archiveEntry->setName(trim(mb_substr($header, 0, 100)));
 		$archiveEntry->setType((int)mb_substr($header, 156, 1));
-		$archiveEntry->setPermissions(octdec(trim(mb_substr($header, 100, 8))));
+		$archiveEntry->setPermissions((int)trim(mb_substr($header, 100, 8)));
 
 		try
 		{
@@ -182,7 +182,7 @@ class ArchiveEntry
 
 	public function updateHeader(): void
 	{
-		$name = MbRegEx::padString(MbRegEx::replace('^\.?\/?(.+)$', '\1', $this->getName()), 100, chr(0), STR_PAD_RIGHT);
+		$name = MbRegEx::padString(MbRegEx::replace('^(\.{0,2}\/)*(.+)$', '\2', $this->getName()), 100, chr(0), STR_PAD_RIGHT);
 		$permissions = MbRegEx::padString($this->getPermissions().chr(0), 8, '0', STR_PAD_LEFT);
 		$modified = MbRegEx::padString(decoct((int)$this->getModificationDate()->format('U')).chr(0), 12, '0', STR_PAD_LEFT);
 		$size = MbRegEx::padString(decoct($this->getSize()).chr(0), 12, '0', STR_PAD_LEFT);
@@ -259,8 +259,13 @@ class ArchiveEntry
 		$this->permissions = $permissions;
 	}
 
-	public function getPermissions(): int
+	public function getPermissions(bool $decimal = false): int
 	{
+		if ($decimal === true)
+		{
+			return octdec((string)$this->permissions);
+		}
+
 		return $this->permissions;
 	}
 

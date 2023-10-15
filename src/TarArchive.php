@@ -122,11 +122,16 @@ class TarArchive
 	 * @return void
 	 * @throws \Exception
 	 */
-	public function extract(int $index, bool $setPermissions = true, bool $setOwner = false): void
+	public function extract(int $index, string $targetDir = '.', bool $setPermissions = true, bool $setOwner = false): void
 	{
-		$data = $this->extractData($index);
+		if (mb_substr($targetDir, -1) === '/')
+		{
+			$targetDir = mb_substr($targetDir, 0, -1);
+		}
+
 		$fileInfo = $this->fileList[$index];
-		$fileDir = dirname($fileInfo->getName());
+		$targetName = $targetDir.'/'.$fileInfo->getName();
+		$fileDir = dirname($targetName);
 
 		if (file_exists($fileDir))
 		{
@@ -145,9 +150,11 @@ class TarArchive
 			throw new \Exception('Cannot create '.$fileDir);
 		}
 
+		$data = $this->extractData($index);
+
 		if (!is_null($data))
 		{
-			$file = @fopen($fileInfo->getName(), 'w');
+			$file = @fopen($targetName, 'w');
 
 			if ($file === false)
 			{
@@ -164,25 +171,25 @@ class TarArchive
 			switch ($fileInfo->getType())
 			{
 				case ArchiveEntry::TYPE_LINK:
-					$created = link($fileInfo->getLinkName(), $fileInfo->getName());
+					$created = link($fileInfo->getLinkName(), $targetName);
 					break;
 				case ArchiveEntry::TYPE_SYMLINK:
-					$created = symlink($fileInfo->getLinkName(), $fileInfo->getName());
+					$created = symlink($fileInfo->getLinkName(), $targetName);
 					break;
 				case ArchiveEntry::TYPE_CHARDEV:
-					$fileMode = POSIX_S_IFCHR | $fileInfo->getPermissions();
-					$created = posix_mknod($fileInfo->getName(), $fileMode, $fileInfo->getDevMajor(), $fileInfo->getDevMinor());
+					$fileMode = POSIX_S_IFCHR | $fileInfo->getPermissions(true);
+					$created = posix_mknod($targetName, $fileMode, $fileInfo->getDevMajor(), $fileInfo->getDevMinor());
 					break;
 				case ArchiveEntry::TYPE_BLOCKDEV:
-					$fileMode = POSIX_S_IFBLK | $fileInfo->getPermissions();
-					$created = posix_mknod($fileInfo->getName(), $fileMode, $fileInfo->getDevMajor(), $fileInfo->getDevMinor());
+					$fileMode = POSIX_S_IFBLK | $fileInfo->getPermissions(true);
+					$created = posix_mknod($targetName, $fileMode, $fileInfo->getDevMajor(), $fileInfo->getDevMinor());
 					//$created = posix_mknod($fileInfo->getName(), POSIX_S_IFBLK, $fileInfo->getDevMajor(), $fileInfo->getDevMinor());
 					break;
 				case ArchiveEntry::TYPE_DIRECTORY:
-					$created = mkdir($fileInfo->getName(), $fileInfo->getPermissions());
+					$created = mkdir($targetName, $fileInfo->getPermissions(true));
 					break;
 				case ArchiveEntry::TYPE_FIFO:
-					$created = posix_mkfifo($fileInfo->getName(), $fileInfo->getPermissions());
+					$created = posix_mkfifo($targetName, $fileInfo->getPermissions(true));
 					break;
 				default:
 					throw new \Exception('Unknown type flag '.$fileInfo->getType());
@@ -202,13 +209,16 @@ class TarArchive
 			case ArchiveEntry::TYPE_SYMLINK:
 				if ($setPermissions === true)
 				{
-					chmod($fileInfo->getName(), $fileInfo->getPermissions());
+					if (!chmod($targetName, $fileInfo->getPermissions(true)))
+					{
+						error_log('Failed to set '.$targetName.' to '.$fileInfo->getPermissions());
+					}
 				}
 			case ArchiveEntry::TYPE_DIRECTORY:
 				if ($setOwner === true)
 				{
-					chown($fileInfo->getName(), $fileInfo->getOwner()->getUserId());
-					chgrp($fileInfo->getName(), $fileInfo->getOwner()->getGroupId());
+					chown($targetName, $fileInfo->getOwner()->getUserId());
+					chgrp($targetName, $fileInfo->getOwner()->getGroupId());
 				}
 				break;
 			default:
@@ -237,16 +247,32 @@ class TarArchive
 			return null;
 		}
 
-		$file = @fopen($this->fileName, 'r');
-
-		if ($file === false)
+		if (!is_null($fileInfo->getOffset()))
 		{
-			throw new \Exception('Cannot open the file for reading');
+			$file = @fopen($this->fileName, 'r');
+
+			if ($file === false)
+			{
+				throw new \Exception('Cannot open the file for reading');
+			}
+
+			fseek($file, $fileInfo->getOffset());
+			$data = fread($file, $fileInfo->getSize());
+			fclose($file);
+		}
+		else
+		{
+			$file = @fopen($fileInfo->getName(), 'r');
+
+			if ($file === false)
+			{
+				throw new \Exception('Cannot open the file for reading');
+			}
+
+			$data = fread($file, $fileInfo->getSize());
+			fclose($file);
 		}
 
-		fseek($file, $fileInfo->getOffset());
-		$data = fread($file, $fileInfo->getSize());
-		fclose($file);
 		return $data;
 	}
 
@@ -265,45 +291,16 @@ class TarArchive
 
 		if (is_null($fileName))
 		{
-			$saveFileName = $this->fileName;
-		}
-		else
-		{
-			$saveFileName = $fileName;
+			$fileName = $this->fileName;
 		}
 
-		$tmpName = tempnam(sys_get_temp_dir(), 'tar_');
-		$file = @fopen($tmpName, 'w');
+		$archiveData = $this->createArchive();
 
-		if ($file === false)
-		{
-			throw new \Exception('Cannot open the file for writing');
-		}
-
-		foreach ($this->fileList as $index => $fileInfo)
-		{
-			$archiveData = $this->archiveFile($index);
-
-			if ($fileInfo->getType() === ArchiveEntry::TYPE_FILE)
-			{
-				$this->fileList[$index]->setOffset(ftell($file) + 512);
-			}
-
-			fwrite($file, $archiveData);
-		}
-
+		$file = @fopen($fileName, 'w');
+		fwrite($file, $archiveData);
 		fclose($file);
 
-		if (is_null(MbRegEx::match('^\.?\/.+$', $saveFileName)))
-		{
-			rename($tmpName, './'.$saveFileName);
-		}
-		else
-		{
-			rename($tmpName, $saveFileName);
-		}
-
-		$this->fileName = $saveFileName;
+		$this->fileName = $fileName;
 	}
 
 	/**
@@ -312,16 +309,12 @@ class TarArchive
 	 */
 	public function createArchive(): string
 	{
+		usort($this->fileList, array('self', 'sortFiles'));
 		$archiveData = '';
 
-		foreach ($this->fileList as $index => $fileInfo)
+		for ($index = 0; $index < count($this->fileList); $index++)
 		{
-			if ($fileInfo->getType() === ArchiveEntry::TYPE_FILE)
-			{
-				$this->fileList[$index]->setOffset(mb_strlen($archiveData) + 512);
-			}
-
-			$archiveData .= $this->archiveFile($index);
+			$archiveData .= $this->archiveFile($index, mb_strlen($archiveData));
 		}
 
 		return $archiveData;
@@ -333,58 +326,36 @@ class TarArchive
 	 * @throws \OutOfBoundsException
 	 * @return string
 	 */
-	private function archiveFile(int $index): string
+	private function archiveFile(int $index, int $offset = 0): string
 	{
 		if (!isset($this->fileList[$index]))
 		{
 			throw new \OutOfBoundsException('Index '.$index.' does not exist');
 		}
 
-		$archiveData = '';
+		$fileData = '';
 
-		if (!is_null($archiveData = $this->fileList[$index]->getHeader()))
+		if ($this->fileList[$index]->getType() === ArchiveEntry::TYPE_FILE)
 		{
-			$archiveData = $this->fileList[$index]->getHeader();
+			$fileData = $this->extractData($index);
+			$rest = mb_strlen($fileData) % 512;
 
-			if ($this->fileList[$index]->getType() === ArchiveEntry::TYPE_FILE)
+			if ($rest != 0)
 			{
-				$fileData = $this->extractData($index);
-				$rest = mb_strlen($fileData) % 512;
-
-				if ($rest != 0)
-				{
-					$missing = 512 - $rest;
-					$fileData .= str_repeat(chr(0), $missing);
-				}
-
-				$archiveData .= $fileData;
+				$missing = 512 - $rest;
+				$fileData .= str_repeat(chr(0), $missing);
 			}
+
+			$this->fileList[$index]->setOffset($offset + 512);
 		}
-		else
+
+		if (is_null($this->fileList[$index]->getHeader()))
 		{
-			$this->fileList[$index]->updateHeader();
-			$archiveData = $this->fileList[$index]->getHeader();
-
-			if ($this->fileList[$index]->getType() === ArchiveEntry::TYPE_FILE)
-			{
-				$file = @fopen($this->fileList[$index]->getName(), 'r');
-				$fileData = fread($file, $this->fileList[$index]->getSize());
-				fclose($file);
-				$rest = mb_strlen($fileData) % 512;
-
-				if ($rest != 0)
-				{
-					$missing = 512 - $rest;
-					$fileData .= str_repeat(chr(0), $missing);
-				}
-
-				$archiveData .= $fileData;
-			}
-
 			$this->fileList[$index]->setName(MbRegEx::replace('^\.?\/?(.+)$', '\1', $this->fileList[$index]->getName()));
 		}
 
-		return $archiveData;
+		$this->fileList[$index]->updateHeader();
+		return $this->fileList[$index]->getHeader().$fileData;
 	}
 
 	/**
@@ -393,9 +364,34 @@ class TarArchive
 	 * @return void
 	 * @throws \Exception
 	 */
-	public function add(string $fileName): void
+	public function add(string $fileName, bool $recursive = true): void
 	{
+		if (mb_substr($fileName, -1) === '/')
+		{
+			$fileName = mb_substr($fileName, 0, -1);
+		}
+
+		if ($this->hasFile($fileName))
+		{
+			return;
+		}
+
 		$this->fileList[] = ArchiveEntry::fromFile($fileName);
+
+		if ((filetype($fileName) === 'dir') && ($recursive === true))
+		{
+			$directory = opendir($fileName);
+
+			while (($file = readdir($directory)) !== false)
+			{
+				if (($file === '.') || ($file === '..'))
+				{
+					continue;
+				}
+
+				$this->add($fileName.'/'.$file, true);
+			}
+		}
 	}
 
 	/**
@@ -424,5 +420,32 @@ class TarArchive
 		}
 
 		$this->fileList = $tmpFileList;
+	}
+
+	public function hasFile(string $fileName): bool
+	{
+		foreach ($this->fileList as $fileInfo)
+		{
+			if ($fileInfo->getName() === $fileName)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static function sortFiles(ArchiveEntry $left, ArchiveEntry $right): int
+	{
+		if ($left > $right)
+		{
+			return 1;
+		}
+		elseif ($left < $right)
+		{
+			return -1;
+		}
+
+		return 0;
 	}
 }
