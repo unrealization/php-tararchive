@@ -86,11 +86,11 @@ class ArchiveEntry
 			$archiveEntry->setModificationDate(new \DateTime());
 		}
 
-		$archiveEntry->setSize(octdec(mb_substr($header, 124, 12)));
-		$archiveEntry->setOwner(new Owner(octdec(mb_substr($header, 108, 8)), trim(mb_substr($header, 265, 32)), octdec(mb_substr($header, 116, 8)), trim(mb_substr($header, 297, 32))));
+		$archiveEntry->setSize(octdec(mb_substr($header, 124, 11)));
+		$archiveEntry->setOwner(new Owner(octdec(mb_substr($header, 108, 7)), trim(mb_substr($header, 265, 32)), octdec(mb_substr($header, 116, 7)), trim(mb_substr($header, 297, 32))));
 		$archiveEntry->setLinkName(trim(mb_substr($header, 157, 100)));
-		$archiveEntry->setDevMajor(octdec(mb_substr($header, 329, 8)));
-		$archiveEntry->setDevMinor(octdec(mb_substr($header, 337, 8)));
+		$archiveEntry->setDevMajor(octdec(trim(mb_substr($header, 329, 8))));
+		$archiveEntry->setDevMinor(octdec(trim(mb_substr($header, 337, 8))));
 		$archiveEntry->setPrefix(trim(mb_substr($header, 345, 155)));
 		return $archiveEntry;
 	}
