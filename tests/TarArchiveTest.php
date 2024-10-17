@@ -11,7 +11,7 @@ use unrealization\TarArchive\ArchiveEntry;
  */
 class TarArchiveTest extends TestCase
 {
-	public function testTarArchive()
+	public function testCreateLoad()
 	{
 		$fileName = sys_get_temp_dir().'/TarArchiveTest_'.uniqid().'.tar';
 
@@ -21,8 +21,8 @@ class TarArchiveTest extends TestCase
 
 		$tar->add(__FILE__);
 		$this->assertSame(1, count($tar->getFileList()));
-		$this->assertFileDoesNotExist($fileName);
 
+		$this->assertFileDoesNotExist($fileName);
 		$tar->saveArchive($fileName);
 		$this->assertFileExists($fileName);
 
@@ -35,14 +35,19 @@ class TarArchiveTest extends TestCase
 		$this->assertSame(filesize(__FILE__), $tar->getFileList()[0]->getSize());
 
 		unlink($fileName);
+	}
+
+	public function testExtract()
+	{
+		$fileName = sys_get_temp_dir().'/TarArchiveTest_'.uniqid().'.tar';
 
 		$tar = new TarArchive();
 		$this->assertSame(0, count($tar->getFileList()));
 
 		$tar->add(__DIR__);
 		$this->assertSame(2, count($tar->getFileList()));
-		$this->assertFileDoesNotExist($fileName);
 
+		$this->assertFileDoesNotExist($fileName);
 		$tar->saveArchive($fileName);
 		$this->assertFileExists($fileName);
 
@@ -65,5 +70,97 @@ class TarArchiveTest extends TestCase
 
 		$this->assertFileExists($dirName.'/'.mb_substr(__FILE__, 1));
 		unlink($fileName);
+	}
+
+	public function testDoubleAdd()
+	{
+		$tar = new TarArchive();
+		$tar->add(__FILE__);
+		$this->assertSame(1, count($tar->getFileList()));
+		$tar->add(__FILE__);
+		$this->assertSame(1, count($tar->getFileList()));
+	}
+
+	public function testRemove()
+	{
+		$tar = new TarArchive();
+		$this->assertSame(0, count($tar->getFileList()));
+		$tar->add(__FILE__);
+		$this->assertSame(1, count($tar->getFileList()));
+		$tar->remove(0);
+		$this->assertSame(0, count($tar->getFileList()));
+		$tar->add(__DIR__);
+		$this->assertSame(2, count($tar->getFileList()));
+		$tar->remove(1);
+		$this->assertSame(1, count($tar->getFileList()));
+	}
+
+	public function testRemoveInvalid()
+	{
+		$tar = new TarArchive();
+		$this->expectException(\OutOfBoundsException::class);
+		$tar->remove(0);
+	}
+
+	public function testDirectoryNames()
+	{
+		$tar = new TarArchive();
+		$tar->add(__DIR__.'/', false);
+
+		$fileList = $tar->getFileList();
+		$this->assertSame(1, count($fileList));
+		$this->assertNotSame(__DIR__.'/', $fileList[0]->getName());
+		$this->assertSame(__DIR__, $fileList[0]->getName());
+	}
+
+	public function testSaveNoName()
+	{
+		$tar = new TarArchive();
+
+		$this->expectException(\Exception::class);
+		$tar->saveArchive();
+	}
+
+	public function testLoadMissingFile()
+	{
+		$fileName = sys_get_temp_dir().'/TarArchiveTest_'.uniqid().'.tar';
+		$this->expectException(\Exception::class);
+		$tar = new TarArchive($fileName);
+	}
+
+	public function testUpdateArchive()
+	{
+		$fileName = sys_get_temp_dir().'/TarArchiveTest_'.uniqid().'.tar';
+		
+		$tar = new TarArchive();
+		$this->assertSame(0, count($tar->getFileList()));
+
+		$tar->add(__FILE__);
+		$this->assertSame(1, count($tar->getFileList()));
+
+		$tar->saveArchive($fileName);
+
+		$tar->remove(0);
+		$this->assertSame(0, count($tar->getFileList()));
+
+		$tar->add(__DIR__);
+		$this->assertSame(2, count($tar->getFileList()));
+		$tar->saveArchive();
+
+		unlink($fileName);
+	}
+
+	public function testExtractInvalid()
+	{
+		$tar = new TarArchive();
+		$this->expectException(\OutOfBoundsException::class);
+		$tar->extract(0);
+	}
+
+	public function testExtractDataInvalid()
+	{
+		$tar = new TarArchive();
+		$this->expectException(\OutOfBoundsException::class);
+		$tar->extractData(0);
 	}
 }
