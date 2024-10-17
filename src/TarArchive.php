@@ -124,6 +124,11 @@ class TarArchive
 	 */
 	public function extract(int $index, string $targetDir = '.', bool $setPermissions = true, bool $setOwner = false): void
 	{
+		if (!isset($this->fileList[$index]))
+		{
+			throw new \OutOfBoundsException('Index '.$index.' does not exist');
+		}
+
 		if (mb_substr($targetDir, -1) === '/')
 		{
 			$targetDir = mb_substr($targetDir, 0, -1);
